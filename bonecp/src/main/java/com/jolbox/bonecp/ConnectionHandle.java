@@ -43,6 +43,7 @@ import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -160,6 +161,8 @@ public class ConnectionHandle implements Connection,Serializable{
 	protected boolean detectUnclosedStatements;
 	/** Config setting. */
 	protected boolean closeOpenStatements;
+	/** lock for close */
+	protected ReentrantReadWriteLock closeLock = new ReentrantReadWriteLock();
 
 	/*
 	 * From: http://publib.boulder.ibm.com/infocenter/db2luw/v8/index.jsp?topic=/com.ibm.db2.udb.doc/core/r0sttmsg.htm
@@ -385,9 +388,9 @@ public class ConnectionHandle implements Connection,Serializable{
 
 		if (((sqlStateDBFailureCodes.contains(state) || connectionState.equals(ConnectionState.TERMINATE_ALL_CONNECTIONS)) && this.pool != null) && this.pool.getDbIsDown().compareAndSet(false, true) ){
 			logger.error("Database access problem. Killing off this connection and all remaining connections in the connection pool. SQL State = " + state);
+			logger.info("Pre-destroy all connections, Created: {}, free: {}, leased: {}", this.pool.getTotalCreatedConnections(), this.pool.getTotalFree(), this.pool.getTotalLeased());
 			this.pool.connectionStrategy.terminateAllConnections();
 			this.pool.destroyConnection(this);
-			this.logicallyClosed.set(true);
 			alreadyDestroyed = true;
 
 			for (int i=0; i < this.pool.partitionCount; i++) {
@@ -401,11 +404,11 @@ public class ConnectionHandle implements Connection,Serializable{
 		//the 08S01 code but one one is killed in the code
 		//above give dbIsDown is set for the first connection
 		if (state.equals("08003") || sqlStateDBFailureCodes.contains(state) || e.getCause() instanceof SocketException) {
-		    if (!alreadyDestroyed) {
-			this.pool.destroyConnection(this);
-			this.logicallyClosed.set(true);
-			getOriginatingPartition().getPoolWatchThreadSignalQueue().offer(new Object()); // item being pushed is not important.
-		    }
+			if (!alreadyDestroyed) {
+				this.pool.destroyConnection(this);
+				this.logicallyClosed.set(true);
+				getOriginatingPartition().getPoolWatchThreadSignalQueue().offer(new Object()); // item being pushed is not important.
+			}
 		}
 		
 		// SQL-92 says:
@@ -553,9 +556,10 @@ public class ConnectionHandle implements Connection,Serializable{
 					this.finalizableRefs.remove(this.connection);
 				}
 			}
-			this.logicallyClosed.set(true);
 		} catch (SQLException e) {
 			throw markPossiblyBroken(e);
+		} finally {
+			this.logicallyClosed.set(true);
 		}
 	}
 
@@ -1727,6 +1731,14 @@ public class ConnectionHandle implements Connection,Serializable{
 	 */
 	public String getUrl() {
 		return this.url;
+	}
+
+	public void lockForClose() {
+		this.closeLock.writeLock().lock();;
+	}
+
+	public void unlockForClose() {
+		this.closeLock.writeLock().unlock();
 	}
 
 	public String toString(){

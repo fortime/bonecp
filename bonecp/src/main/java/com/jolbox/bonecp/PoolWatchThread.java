@@ -67,14 +67,18 @@ public class PoolWatchThread implements Runnable {
 
 				maxNewConnections = this.partition.getMaxConnections()-this.partition.getCreatedConnections();
 				// loop for spurious interrupt
-				while (maxNewConnections == 0 || (this.partition.getAvailableConnections() *100/this.partition.getMaxConnections() > this.poolAvailabilityThreshold)){
+				while (maxNewConnections == 0
+				        || (this.partition.getAvailableConnections() *100/this.partition.getMaxConnections() > this.poolAvailabilityThreshold)){
 					if (maxNewConnections == 0){
 						this.partition.setUnableToCreateMoreTransactions(true);
 					}
 					
 					this.partition.getPoolWatchThreadSignalQueue().take();
 					maxNewConnections = this.partition.getMaxConnections()-this.partition.getCreatedConnections();
-					
+					// for the case where the number of connections is lower than the minimum number
+					if (this.partition.getCreatedConnections() < this.partition.getMinConnections()) {
+						break;
+					}
 				}
 
 				if (maxNewConnections > 0 
@@ -83,7 +87,6 @@ public class PoolWatchThread implements Runnable {
 					// for the case where we have killed off all our connections due to network/db error
 					if (this.partition.getCreatedConnections() < this.partition.getMinConnections()){
 						fillConnections(this.partition.getMinConnections() - this.partition.getCreatedConnections() );
-							
 					}
 				}
 				

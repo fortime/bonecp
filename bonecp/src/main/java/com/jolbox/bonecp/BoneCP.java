@@ -212,12 +212,24 @@ public class BoneCP implements Serializable, Closeable {
 	 * @param conn
 	 */
 	protected void destroyConnection(ConnectionHandle conn) {
-		postDestroyConnection(conn);
-		conn.setInReplayMode(true); // we're dead, stop attempting to replay anything
+		if (conn.isClosed()) {
+			conn.setInReplayMode(true); // we're dead, stop attempting to replay anything
+			return;
+		}
 		try {
+			conn.lockForClose();
+			conn.setInReplayMode(true); // we're dead, stop attempting to replay anything
+			if (conn.isClosed()) {
+				return;
+			}
+			try {
 				conn.internalClose();
-		} catch (SQLException e) {
-			logger.error("Error in attempting to close connection", e);
+			} catch (SQLException e) {
+				logger.error("Error in attempting to close connection", e);
+			}
+			postDestroyConnection(conn);
+		} finally {
+			conn.unlockForClose();
 		}
 	}
  
@@ -649,15 +661,10 @@ public class BoneCP implements Serializable, Closeable {
 						&& connectionHandle.isPossiblyBroken()
 				&& !isConnectionHandleAlive(connectionHandle))){
 
-            if (connectionHandle.isExpired()) {
-                connectionHandle.internalClose();
-            }
-
 			ConnectionPartition connectionPartition = connectionHandle.getOriginatingPartition();
-			postDestroyConnection(connectionHandle);
 
+			destroyConnection(connectionHandle);
 			maybeSignalForMoreConnections(connectionPartition);
-			connectionHandle.clearStatementCaches(true);
 			return; // don't place back in queue - connection is broken or expired.
 		}
 
@@ -666,7 +673,7 @@ public class BoneCP implements Serializable, Closeable {
 		if (!this.poolShuttingDown){
 			putConnectionBackInPartition(connectionHandle);
 		} else {
-			connectionHandle.internalClose();
+			destroyConnection(connectionHandle);
 		}
 	}
 
@@ -683,9 +690,9 @@ public class BoneCP implements Serializable, Closeable {
 			((CachedConnectionStrategy)this.connectionStrategy).tlConnections.set(new AbstractMap.SimpleEntry<ConnectionHandle, Boolean>(connectionHandle, false));
 		} else {
 			BlockingQueue<ConnectionHandle> queue = connectionHandle.getOriginatingPartition().getFreeConnections();
-				if (!queue.offer(connectionHandle)){ // this shouldn't fail
-					connectionHandle.internalClose();
-				}
+			if (!queue.offer(connectionHandle)){ // this shouldn't fail
+				destroyConnection(connectionHandle);
+			}
 		}
 
 
@@ -699,9 +706,7 @@ public class BoneCP implements Serializable, Closeable {
 	public boolean isConnectionHandleAlive(ConnectionHandle connection) {
 		Statement stmt = null;
 		boolean result = false;
-		boolean logicallyClosed = connection.logicallyClosed.get();
 		try {
-			connection.logicallyClosed.compareAndSet(true, false); // avoid checks later on if it's marked as closed.
 			String testStatement = this.config.getConnectionTestStatement();
 			ResultSet rs = null;
 
@@ -723,7 +728,6 @@ public class BoneCP implements Serializable, Closeable {
 			// connection must be broken!
 			result = false;
 		} finally {
-			connection.logicallyClosed.set(logicallyClosed);
 			connection.setConnectionLastResetInMs(System.currentTimeMillis());
 			result = closeStatement(stmt, result);
 		}

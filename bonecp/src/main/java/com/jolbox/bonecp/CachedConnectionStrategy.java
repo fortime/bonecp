@@ -113,9 +113,9 @@ public class CachedConnectionStrategy extends AbstractConnectionStrategy {
 						if (!CachedConnectionStrategy.this.pool.poolShuttingDown){
 							logger.debug("Monitored thread is dead, closing off allocated connection.");
 						}
-						c.internalClose();
-					} catch (SQLException e) {
-						e.printStackTrace();
+						CachedConnectionStrategy.this.pool.destroyConnection(c);
+					} catch (Throwable t) {
+						t.printStackTrace();
 					}
 					CachedConnectionStrategy.this.threadFinalizableRefs.remove(c);
 			}

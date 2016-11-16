@@ -17,6 +17,8 @@
 package com.jolbox.bonecp;
 
 import java.sql.SQLException;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -119,7 +121,7 @@ public class ConnectionTesterThread implements Runnable {
 						if (this.lifoMode){
 							// we can't put it back normally or it will end up in front again.
 							if (!(connection.getOriginatingPartition().getFreeConnections().offer(connection))){
-								connection.internalClose();
+								closeConnection(connection);
 							}
 						} else {
 							this.pool.putConnectionBackInPartition(connection);
@@ -142,19 +144,28 @@ public class ConnectionTesterThread implements Runnable {
 	 * @param connection to close
 	 */
 	protected void closeConnection(ConnectionHandle connection) {
-
-		if (connection != null && !connection.isClosed()) {
+		if (connection != null) {
+			if (connection.isClosed()) {
+				return;
+			}
 			try {
-				connection.internalClose();
-			} catch (SQLException e) {
-				logger.error("Destroy connection exception", e);
+				connection.lockForClose();
+				if (connection.isClosed()) {
+					return;
+				}
+				ConnectionPartition partition = connection.getOriginatingPartition();
+				try {
+					connection.internalClose();
+				} catch(Throwable t) {
+					logger.error("Destroy connection exception", t);
+				}
+				pool.postDestroyConnection(connection);
+				if (partition != null) {
+					partition.getPoolWatchThreadSignalQueue().offer(new Object()); // item being pushed is not important.
+				}
 			} finally {
-				this.pool.postDestroyConnection(connection);
-				connection.getOriginatingPartition().getPoolWatchThreadSignalQueue().offer(new Object()); // item being pushed is not important.
+				connection.unlockForClose();
 			}
 		}
 	}
-
-
-
 }

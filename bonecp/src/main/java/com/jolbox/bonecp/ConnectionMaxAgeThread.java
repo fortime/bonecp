@@ -87,7 +87,7 @@ public class ConnectionMaxAgeThread implements Runnable {
 					if (this.lifoMode){
 						// we can't put it back normally or it will end up in front again.
 						if (!(connection.getOriginatingPartition().getFreeConnections().offer(connection))){
-							connection.internalClose();
+							closeConnection(connection);
 						}
 					} else {
 						this.pool.putConnectionBackInPartition(connection);
@@ -110,13 +110,27 @@ public class ConnectionMaxAgeThread implements Runnable {
 	 */
 	protected void closeConnection(ConnectionHandle connection) {
 		if (connection != null) {
+			if (connection.isClosed()) {
+				return;
+			}
 			try {
-				connection.internalClose();
-			} catch (Throwable t) {
-				logger.error("Destroy connection exception", t);
+				connection.lockForClose();
+				if (connection.isClosed()) {
+					return;
+				}
+				ConnectionPartition partition = connection.getOriginatingPartition();
+				try {
+					connection.internalClose();
+				} catch(Throwable t) {
+					logger.error("Destroy connection exception", t);
+				}
+				pool.postDestroyConnection(connection);
+				if (partition != null) {
+					partition.getPoolWatchThreadSignalQueue().offer(new Object()); // item being pushed is not important.
+				}
 			} finally {
-				this.pool.postDestroyConnection(connection);
+				connection.unlockForClose();
 			}
 		}
-}
+	}
 }
