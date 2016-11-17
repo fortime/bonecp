@@ -70,7 +70,7 @@ public class TestConnectionMaxAgeTester {
 		config = new BoneCPConfig();
 		config.setMaxConnectionAgeInSeconds(1);
 		
-		testClass = new ConnectionMaxAgeThread(mockConnectionPartition, mockExecutor, mockPool, 5000, false);
+		testClass = new ConnectionMaxAgeThread(mockConnectionPartition, mockPool, 5000, false);
 		TestUtils.mockLogger(testClass.getClass());
 	}
 	
@@ -131,7 +131,7 @@ public class TestConnectionMaxAgeTester {
 		mockConnection.internalClose();
 		
 		replay(mockQueue, mockExecutor, mockConnectionPartition, mockConnection, mockPool);
-		ConnectionMaxAgeThread testClass2 = new ConnectionMaxAgeThread(mockConnectionPartition, mockExecutor, mockPool, 5000, true);
+		ConnectionMaxAgeThread testClass2 = new ConnectionMaxAgeThread(mockConnectionPartition, mockPool, 5000, true);
 		testClass2.run();
 
 		verify(mockConnection, mockPool);
@@ -179,7 +179,6 @@ public class TestConnectionMaxAgeTester {
 		ConnectionHandle mockConnectionException = createNiceMock(ConnectionHandle.class);
 		expect(mockQueue.poll()).andReturn(mockConnectionException).times(2);
 		expect(mockConnectionException.isExpired(anyLong())).andThrow(new RuntimeException()).anyTimes();
-		expect(mockExecutor.isShutdown()).andReturn(false).once().andReturn(true).once();
 		
 		replay(mockQueue,mockConnectionException, mockExecutor, mockConnectionPartition, mockPool);
 		testClass.run();
@@ -203,9 +202,6 @@ public class TestConnectionMaxAgeTester {
 		expect(mockExecutor.isShutdown()).andReturn(false).anyTimes();
 		mockPool.putConnectionBackInPartition(mockConnectionException);
 		expectLastCall().andThrow(new SQLException()).once();
-		
-		// we should be able to reschedule
-		expect(mockExecutor.schedule((Runnable)anyObject(), anyLong(), (TimeUnit)anyObject())).andReturn(null).once();
 		
 		replay(mockQueue,mockConnectionException, mockExecutor, mockConnectionPartition, mockPool);
 		testClass.run();
@@ -253,17 +249,17 @@ public class TestConnectionMaxAgeTester {
 	public void testCloseConnectionWithExceptionCoverage() throws Exception{
 		ConnectionHandle mockConnection = createNiceMock(ConnectionHandle.class);
 		mockPool.postDestroyConnection(mockConnection);
-		expectLastCall().once();
-    // set logger to null so that exception will be thrown in catch clause
-    Field field = ConnectionMaxAgeThread.class.getDeclaredField("logger");
-    TestUtils.setFinalStatic(field, null);
+		expectLastCall().anyTimes();
+		// set logger to null so that exception will be thrown in catch clause
+		Field field = ConnectionMaxAgeThread.class.getDeclaredField("logger");
+		TestUtils.setFinalStatic(field, null);
 		mockConnection.internalClose();
 		expectLastCall().andThrow(new SQLException());
 		
 		replay(mockConnection, mockPool);
 		try{
 			testClass.closeConnection(mockConnection);
-      fail("Expecting NPE because logger was set to null");
+			fail("Expecting NPE because logger was set to null");
 		} catch (Exception e){
 			// do nothing
 		}

@@ -253,7 +253,10 @@ public class TestConnectionHandle {
 		});
 		testThread.start();
 		while (!this.started){
-			Thread.sleep(20);
+			try {
+				Thread.sleep(20);
+			} catch(Exception e) {
+			}
 		}
 		this.testClass.setThreadWatch(testThread);
 		this.testClass.close();

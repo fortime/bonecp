@@ -53,8 +53,12 @@ public class TestCustomThreadFactory {
 		executor.execute(new MockThread());
 		
 		for (int i=0; i < 5; i++) {
-				signalled = true;
-			Thread.sleep(400);
+			signalled = true;
+			try {
+				Thread.sleep(400);
+			} catch(Exception e) {
+				break;
+			}
 		}
 		verify(mockLogger);
 

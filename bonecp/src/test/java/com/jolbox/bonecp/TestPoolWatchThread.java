@@ -218,12 +218,12 @@ public class TestPoolWatchThread {
 		expect(mockPool.obtainInternalConnection((ConnectionHandle)anyObject())).andReturn(EasyMock.createNiceMock(Connection.class)).anyTimes();
 		expect(mockPool.getDbIsDown()).andReturn(new AtomicBoolean()).anyTimes();
     	expect(mockPool.getConfig()).andReturn(mockConfig).anyTimes();
-		replay(mockPool, mockPartition, mockLogger);
+		replay(mockPool, mockPartition);
 		testClass.run();
 		EasyMock.verify(mockPartition);
 		
 		// check exceptional cases
-		reset(mockPartition, mockPool, mockLogger);
+		reset(mockPartition, mockPool);
 		resetSignalled();
 
 

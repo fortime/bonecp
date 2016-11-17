@@ -82,11 +82,16 @@ public class TestRobustness {
 			}
 		});
 
+		BoneCP pool = null;
 		try{
-			new BoneCP(config);
+			pool = new BoneCP(config);
 			fail("Should trigger an exception");
 		} catch (SQLException e){
 			// nothing
+		} finally {
+			if (pool != null) {
+				pool.close();
+			}
 		}
 	}
 
@@ -120,11 +125,16 @@ public class TestRobustness {
 			}
 		});
 
+		BoneCP pool = null;
 		try{
-			new BoneCP(config);
+			pool = new BoneCP(config);
 			fail("We should fail the init");
 		} catch (SQLException e){
 			// nothing
+		} finally {
+			if (pool != null) {
+				pool.close();
+			}
 		}
 	}
 
@@ -220,11 +230,16 @@ public class TestRobustness {
 			}
 		});
 
+		BoneCP pool = null;
 		try {
-		BoneCP pool = new BoneCP(config);
-		fail("Should have blown up");
+			pool = new BoneCP(config);
+			fail("Should have blown up");
 		} catch (SQLException e) {
 			// nothing
+		} finally {
+			if (pool != null) {
+				pool.close();
+			}
 		}
 	}
 	/** Pretend we have multiple connections that triggers a fatal DB/network exception. 
@@ -234,15 +249,24 @@ public class TestRobustness {
 	public void testTwoConnectionsDieSimultaneously() throws SQLException, InterruptedException{
 		final Connection mockConnection1 = createNiceMock(Connection.class);
 		final Connection mockConnection2 = createNiceMock(Connection.class);
+		final Connection mockConnection3 = createNiceMock(Connection.class);
+		final Connection mockConnection4 = createNiceMock(Connection.class);
+		final Connection mockConnection5 = createNiceMock(Connection.class);
+		final Connection mockConnection0 = createNiceMock(Connection.class);
 		final AtomicInteger ai = new AtomicInteger();
 
 		driver = new MockJDBCDriver(new MockJDBCAnswer() {
 
 
 			public Connection answer() throws SQLException {
-				switch (ai.getAndIncrement()){ // skip sanity 1st connection, skip 2nd driver force load connection
-				case 2: return mockConnection1;
-				case 3: return mockConnection2;
+				int i = ai.getAndIncrement();
+				switch (i){ // skip sanity 1st connection, skip 2nd driver force load connection
+				case 0: return mockConnection0;
+				case 1: return mockConnection1;
+				case 2: return mockConnection2;
+				case 3: return mockConnection3;
+				case 4: return mockConnection4;
+				case 5: return mockConnection5;
 				default:
 					return createNiceMock(Connection.class);
 				}
@@ -255,22 +279,33 @@ public class TestRobustness {
 		}
 
 		// 08S01 is a specific db code that signals to the rest of the code to discard existing connections
+		expect(mockConnection0.prepareStatement((String)anyObject())).andThrow(new SQLException("reason", "08S01"));
 		expect(mockConnection1.prepareStatement((String)anyObject())).andThrow(new SQLException("reason", "08S01"));
 		expect(mockConnection2.prepareStatement((String)anyObject())).andThrow(new SQLException("reason", "08S01"));
+		expect(mockConnection3.prepareStatement((String)anyObject())).andThrow(new SQLException("reason", "08S01"));
+		expect(mockConnection4.prepareStatement((String)anyObject())).andThrow(new SQLException("reason", "08S01"));
+		expect(mockConnection5.prepareStatement((String)anyObject())).andThrow(new SQLException("reason", "08S01"));
+		expect(mockConnection0.getMetaData()).andThrow(new SQLException()).anyTimes(); // for isConnectionAlive
 		expect(mockConnection1.getMetaData()).andThrow(new SQLException()).anyTimes(); // for isConnectionAlive
 		expect(mockConnection2.getMetaData()).andThrow(new SQLException()).anyTimes(); // for isConnectionAlive
-		replay(mockConnection1, mockConnection2);
+		expect(mockConnection3.getMetaData()).andThrow(new SQLException()).anyTimes(); // for isConnectionAlive
+		expect(mockConnection4.getMetaData()).andThrow(new SQLException()).anyTimes(); // for isConnectionAlive
+		expect(mockConnection5.getMetaData()).andThrow(new SQLException()).anyTimes(); // for isConnectionAlive
+		replay(mockConnection0, mockConnection1, mockConnection2, mockConnection3, mockConnection4, mockConnection5);
+		int threadNum = 2;
 		final CountDownLatch cdl = new CountDownLatch(1);
-		final CountDownLatch cdlEnd = new CountDownLatch(2);
-		for (int i=0; i < 2; i++){
+		final CountDownLatch cdlEnd = new CountDownLatch(threadNum);
+		final CountDownLatch cdlStart = new CountDownLatch(threadNum);
+		for (int i=0; i < threadNum; i++){
 			new Thread(new Runnable() {
 
 				public void run() {
 					ConnectionHandle ch = null ;
 					try {
+						ch = (ConnectionHandle) pool.getConnection();
+						cdlStart.countDown();
 						cdl.await();
 
-						ch = (ConnectionHandle) pool.getConnection();
 						ch.prepareStatement("lalala");
 						fail("Should trigger exception");
 					} catch (SQLException e) {
@@ -291,6 +326,8 @@ public class TestRobustness {
 			}).start();
 		}
 
+		// make sure all threads have gotten a connection which throws exception.
+		cdlStart.await();
 		cdl.countDown();
 		cdlEnd.await();
 		for(ConnectionHandle c: pool.partitions[0].getFreeConnections()){

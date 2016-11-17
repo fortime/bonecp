@@ -20,7 +20,6 @@ import static org.easymock.EasyMock.anyLong;
 import static org.easymock.EasyMock.anyObject;
 import static org.easymock.EasyMock.expect;
 import static org.easymock.EasyMock.expectLastCall;
-import static org.easymock.EasyMock.makeThreadSafe;
 import static org.easymock.EasyMock.replay;
 import static org.easymock.EasyMock.reset;
 import static org.easymock.EasyMock.verify;
@@ -41,7 +40,6 @@ import java.sql.DatabaseMetaData;
 import java.sql.DriverManager;
 import java.sql.SQLException;
 import java.sql.Statement;
-import java.util.Map;
 import java.util.Properties;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
@@ -62,18 +60,15 @@ import javax.management.ObjectInstance;
 import javax.management.ObjectName;
 import javax.sql.DataSource;
 
-import junit.framework.Assert;
-
 import org.easymock.EasyMock;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
-import org.slf4j.Logger;
 
-import com.jolbox.bonecp.hooks.AcquireFailConfig;
 import com.jolbox.bonecp.hooks.ConnectionHook;
-import com.jolbox.bonecp.hooks.ConnectionState;
 import com.jolbox.bonecp.hooks.CustomHook;
+
+import junit.framework.Assert;
 
 /**
  * @author wwadge
@@ -97,8 +92,6 @@ public class TestBoneCP {
 	private ConnectionHandle mockConnection;
 	/** Mock handle. */
 	private Lock mockLock;
-	/** Mock handle. */
-	private Logger mockLogger;
 	/** Mock handle. */
 	private DatabaseMetaData mockDatabaseMetadata;
 	/** Mock handle. */
@@ -180,13 +173,8 @@ public class TestBoneCP {
 		mockConnectionHandles = EasyMock.createNiceMock(LinkedBlockingQueue.class);
 		mockConnection = EasyMock.createNiceMock(ConnectionHandle.class);
 		mockLock = EasyMock.createNiceMock(Lock.class);
-		mockLogger = TestUtils.mockLogger(testClass.getClass());
-		makeThreadSafe(mockLogger, true);
 		mockDatabaseMetadata = EasyMock.createNiceMock(DatabaseMetaData.class);
 		mockResultSet = EasyMock.createNiceMock(MockResultSet.class);
-
-		mockLogger.error((String)anyObject(), anyObject());
-		expectLastCall().anyTimes();
 
 		mockPool = EasyMock.createNiceMock(BoneCP.class);
 		reset(mockConfig, mockKeepAliveScheduler, mockConnectionsScheduler, mockPartition, 
@@ -1451,16 +1439,21 @@ public class TestBoneCP {
 		expect(config.getServiceOrder()).andReturn("LIFO").anyTimes();
 		expect(config.getMaxConnectionAgeInSeconds()).andReturn(100000L).anyTimes();
 		expect(config.clone()).andReturn(config).anyTimes();
-		expect(config.getIdleConnectionTestPeriod((TimeUnit)anyObject())).andReturn(5L).times(2).andReturn(0L).times(2);
-		expect(config.getIdleMaxAge(TimeUnit.SECONDS)).andReturn(0L).times(2).andReturn(4L).times(2);
+		expect(config.getIdleConnectionTestPeriod((TimeUnit)anyObject())).andReturn(5L).times(2).andReturn(0L).times(1);
+		expect(config.getIdleMaxAge((TimeUnit)anyObject())).andReturn(2L).times(2).andReturn(4L).times(1);
 		reset(mockKeepAliveScheduler);
 		replay(config, mockKeepAliveScheduler);
 		
-		BoneCP pool = new BoneCP(config); // test idleConnectionTestPeriod > 0. max age = 0
-//		assertEquals(1, pool.keepAliveScheduler.shutdownNow().size());
-	
-		pool = new BoneCP(config); // test idleConnectionTestPeriod = 0. max age > 0
-//		assertEquals(1, pool.keepAliveScheduler.shutdownNow().size());
+		BoneCP pool = null;
+		try {
+			pool = new BoneCP(config); // test idleConnectionTestPeriod = 0. max age > 0
+		} catch(RuntimeException t) {
+			t.printStackTrace();
+			throw t;
+		} finally {
+			pool.close();
+		}
+		// assertEquals(1, pool.keepAliveScheduler.shutdownNow().size());
 		
 		
 		verify(config, mockKeepAliveScheduler);

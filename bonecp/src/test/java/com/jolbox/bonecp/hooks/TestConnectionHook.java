@@ -277,7 +277,10 @@ public class TestConnectionHook {
 		expect(mockPreparedStatement.execute()).andAnswer(new IAnswer<Boolean>() {
 			
 			public Boolean answer() throws Throwable {
-				Thread.sleep(300); // something that exceeds our limit
+				try {
+					Thread.sleep(300); // something that exceeds our limit
+				} catch(Exception e) {
+				}
 				return false;
 			}
 		}).once();
