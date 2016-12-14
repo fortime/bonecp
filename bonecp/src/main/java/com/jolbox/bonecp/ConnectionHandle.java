@@ -388,7 +388,8 @@ public class ConnectionHandle implements Connection,Serializable{
 
 		if (((sqlStateDBFailureCodes.contains(state) || connectionState.equals(ConnectionState.TERMINATE_ALL_CONNECTIONS)) && this.pool != null) && this.pool.getDbIsDown().compareAndSet(false, true) ){
 			logger.error("Database access problem. Killing off this connection and all remaining connections in the connection pool. SQL State = " + state);
-			logger.info("Pre-destroy all connections, Created: {}, free: {}, leased: {}", this.pool.getTotalCreatedConnections(), this.pool.getTotalFree(), this.pool.getTotalLeased());
+			logger.info("Pre-destroy all connections, Created: {}, free: {}, leased: {}:\n{}",
+					this.pool.getTotalCreatedConnections(), this.pool.getTotalFree(), this.pool.getTotalLeased(), this.pool.config);
 			this.pool.connectionStrategy.terminateAllConnections();
 			this.pool.destroyConnection(this);
 			alreadyDestroyed = true;
