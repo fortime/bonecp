@@ -244,7 +244,9 @@ public class BoneCP implements Serializable, Closeable {
 			//			assert o != null : "Did not manage to remove connection from finalizable ref queue";
 		}
 
-		partition.updateCreatedConnections(-1);
+		if (handle.isAddedToPartition()) {
+			partition.updateCreatedConnections(-1);
+		}
 		partition.setUnableToCreateMoreTransactions(false); // we can create new ones now, this is an optimization
 
 

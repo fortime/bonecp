@@ -185,6 +185,9 @@ public class ConnectionHandle implements Connection,Serializable{
 	private static final ImmutableSet<String> sqlStateDBFailureCodes = ImmutableSet.of("08001", "08006", "08007", "08S01", "57P01"); 
 	/** Keep track of open statements. */
 	protected ConcurrentMap<Statement, String> trackedStatement;
+
+	protected boolean addedToPartition;
+
 	/** Avoid creating a new string object each time. */
 	private final String noStackTrace = "";
 
@@ -199,7 +202,8 @@ public class ConnectionHandle implements Connection,Serializable{
 	protected ConnectionHandle(Connection connection, ConnectionPartition partition, BoneCP pool, boolean recreating) throws SQLException {
 		boolean newConnection = connection == null;
 
-		
+		this.addedToPartition = false;
+
 		this.originatingPartition = partition;
 		this.pool = pool;
 		this.connectionHook = pool.getConfig().getConnectionHook();
@@ -1740,6 +1744,14 @@ public class ConnectionHandle implements Connection,Serializable{
 
 	public void unlockForClose() {
 		this.closeLock.writeLock().unlock();
+	}
+
+	public boolean isAddedToPartition() {
+		return this.addedToPartition;
+	}
+
+	public void setAddedToPartition() {
+		this.addedToPartition = true;
 	}
 
 	public String toString(){

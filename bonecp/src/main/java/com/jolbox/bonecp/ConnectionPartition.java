@@ -107,6 +107,7 @@ public class ConnectionPartition implements Serializable{
 	 */
 	protected void addFreeConnection(ConnectionHandle connectionHandle) throws SQLException{
 		connectionHandle.setOriginatingPartition(this);
+		connectionHandle.setAddedToPartition();
 		// assume success to avoid racing where we insert an item in a queue and having that item immediately
 		// taken and closed off thus decrementing the created connection count.
 		updateCreatedConnections(1);
